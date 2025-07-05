@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Géolocalisateur H+1</title>
+</head>
+<body>
+<h1>Géolocalisateur H+1</h1>
+
+<label for="phone">Numéro international :</label>
+<input id="phone" type="tel" placeholder="+33612345678" />
+<button onclick="startTracking()">Commencer le suivi (1h)</button>
+
+<p id="status"></p>
+
+<script>
+function startTracking() {
+  const phone = document.getElementById("phone").value.trim();
+  if (!phone) return alert("Numéro requis");
+
+  const startTime = Date.now();
+  document.getElementById("status").textContent = "Suivi activé";
+
+  const intervalId = setInterval(() => {
+    if (Date.now() - startTime > 3600000) {
+      document.getElementById("status").textContent = "Suivi terminé (H+1)";
+      clearInterval(intervalId);
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(position => {
+      fetch('/track', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone,
+          lat: position.coords.latitude,
+          lon: position.coords.longitude,
+          timestamp: Date.now()
+        })
+      }).catch(e => console.error(e));
+    }, err => {
+      document.getElementById("status").textContent = "Erreur géolocalisation : " + err.message;
+    });
+  }, 10000);
+}
+</script>
+</body>
+</html>
+
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Admin Géolocalisation</title>
+</head>
+<body>
+<h1>Admin : Position par numéro</h1>
+
+<label for="phone">Numéro international :</label>
+<input id="phone" type="tel" placeholder="+33612345678" />
+<button onclick="getPosition()">Afficher position</button>
+
+<pre id="result"></pre>
+
+<script>
+async function getPosition() {
+  const phone = document.getElementById("phone").value.trim();
+  if (!phone) return alert("Numéro requis");
+  try {
+    const res = await fetch(`/position?phone=${encodeURIComponent(phone)}`);
+    if (!res.ok) throw new Error("Numéro introuvable");
+    const data = await res.json();
+    document.getElementById("result").textContent = JSON.stringify(data, null, 2);
+  } catch(e) {
+    document.getElementById("result").textContent = e.message;
+  }
+}
+</script>
+
+</body>
+</html>
+
+const express = require('express');
+const app = express();
+const cors = require('cors');
+
+app.use(cors());
+app.use(express.json());
+app.use(express.static('public')); // dossier où on met index.html et admin.html
+
+const locations = {}; // stocke les dernières positions par numéro de téléphone
+
+// Endpoint pour recevoir la géolocalisation
+app.post('/track', (req, res) => {
+  const { phone, lat, lon, timestamp } = req.body;
+  if (!phone || !lat || !lon || !timestamp) {
+    return res.status(400).send("Données manquantes");
+  }
+  // Enregistrer seulement si timestamp dans la dernière heure
+  if (Date.now() - timestamp > 3600000) {
+    return res.status(400).send("Session expirée");
+  }
+  locations[phone] = { lat, lon, timestamp };
+  res.send("OK");
+});
+
+// Endpoint admin pour récupérer la position
+app.get('/position', (req, res) => {
+  const phone = req.query.phone;
+  if (!phone || !locations[phone]) {
+    return res.status(404).send("Numéro introuvable");
+  }
+  res.json(locations[phone]);
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Serveur lancé sur http://localhost:${PORT}`);
+});
+
+{
+  "name": "geolocalisateur-hplus1",
+  "version": "1.0.0",
+  "description": "Géolocalisateur H+1 avec alerte inactivité",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2"
+  }
+}
+
+{
+  "version": 2,
+  "builds": [
+    { "src": "server.js", "use": "@vercel/node" }
+  ],
+  "routes": [
+    { "src": "/(.*)", "dest": "server.js" }
+  ]
+}
+
+git init
+git remote add origin https://github.com/Royalcoco/geolocalisateur-hplus1.git
+git add .
+git commit -m "Initial commit géolocalisateur H+1"
+git push -u origin main
